@@ -3,6 +3,7 @@ var device = null;
     'use strict';
 
   const expectedDfuInterfaceName = "@Internal Flash    /0x08000000/64*02Kg";
+    const stVendorId = 0x0483;
 
     function hex4(n) {
         let s = n.toString(16)
@@ -234,7 +235,8 @@ var device = null;
 
         let searchParams = new URLSearchParams(window.location.search);
         let fromLandingPage = false;
-        let vid = 0;
+        let vid = stVendorId;
+        vidField.value = "0x" + hex4(vid).toUpperCase();
         // Set the vendor ID from the landing page URL
         if (searchParams.has("vid")) {
             const vidString = searchParams.get("vid");
@@ -433,36 +435,49 @@ var device = null;
             return device;
         }
 
-        function autoConnect(vid, serial) {
-            dfu.findAllDfuInterfaces().then(
-                async dfu_devices => {
-                    let matching_devices = [];
-                    for (let dfu_device of dfu_devices) {
-                        if (serial) {
-                            if (dfu_device.device_.serialNumber == serial) {
-                                matching_devices.push(dfu_device);
-                            }
-                        } else if (dfu_device.device_.vendorId == vid) {
-                            matching_devices.push(dfu_device);
-                        }
-                    }
-
-                    if (matching_devices.length == 0) {
-                        statusDisplay.textContent = 'No device found.';
-                    } else {
-                        if (matching_devices.length == 1) {
-                            statusDisplay.textContent = 'Connecting...';
-                            device = matching_devices[0];
-                            console.log(device);
-                            device = await connect(device);
-                        } else {
-                            statusDisplay.textContent = "Multiple DFU interfaces found.";
-                        }
-                        vidField.value = "0x" + hex4(matching_devices[0].device_.vendorId).toUpperCase();
-                        vid = matching_devices[0].device_.vendorId;
-                    }
+        const connectToDevice = async selectedDevice => {
+            let interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
+            if (interfaces.length == 0) {
+                console.log(selectedDevice);
+                statusDisplay.textContent = "The selected device does not have any USB DFU interfaces.";
+            } else if (interfaces.length == 1) {
+                await fixInterfaceNames(selectedDevice, interfaces);
+                device = await connect(new dfu.Device(selectedDevice, interfaces[0]));
+            } else {
+                await fixInterfaceNames(selectedDevice, interfaces);
+                const firstInterfaceName = String(interfaces[0].name).trim();
+                if (firstInterfaceName != expectedDfuInterfaceName) {
+                    statusDisplay.textContent = `Expected first DFU interface name "${expectedDfuInterfaceName}", got "${firstInterfaceName}".`;
+                    return;
                 }
-            );
+                device = await connect(new dfu.Device(selectedDevice, interfaces[0]));
+            }
+        };
+
+        async function autoConnectPairedDevice() {
+            let filters = [];
+            if (serial) {
+                filters.push({ 'serialNumber': serial });
+            } else if (vid) {
+                filters.push({ 'vendorId': vid });
+            }
+
+            let devices = await navigator.usb.getDevices();
+            let selectedDevice = null;
+            if (serial) {
+                selectedDevice = devices.find(usbDevice => usbDevice.serialNumber == serial);
+            } else if (vid) {
+                selectedDevice = devices.find(usbDevice => usbDevice.vendorId == vid);
+            } else if (devices.length > 0) {
+                selectedDevice = devices[0];
+            }
+
+            if (selectedDevice) {
+                await connectToDevice(selectedDevice);
+                return true;
+            }
+
+            return false;
         }
 
         vidField.addEventListener("change", function() {
@@ -491,7 +506,7 @@ var device = null;
             }
         });
 
-        connectButton.addEventListener('click', function() {
+        connectButton.addEventListener('click', async function() {
             if (device) {
                 device.close().then(onDisconnect);
                 device = null;
@@ -502,26 +517,7 @@ var device = null;
                 } else if (vid) {
                     filters.push({ 'vendorId': vid });
                 }
-                navigator.usb.requestDevice({ 'filters': filters }).then(
-                    async selectedDevice => {
-                        let interfaces = dfu.findDeviceDfuInterfaces(selectedDevice);
-                        if (interfaces.length == 0) {
-                            console.log(selectedDevice);
-                            statusDisplay.textContent = "The selected device does not have any USB DFU interfaces.";
-                        } else if (interfaces.length == 1) {
-                            await fixInterfaceNames(selectedDevice, interfaces);
-                            device = await connect(new dfu.Device(selectedDevice, interfaces[0]));
-                        } else {
-                            await fixInterfaceNames(selectedDevice, interfaces);
-                            const firstInterfaceName = String(interfaces[0].name);
-                            if (firstInterfaceName != expectedDfuInterfaceName) {
-                                statusDisplay.textContent = `Expected first DFU interface name "${expectedDfuInterfaceName}", got "${firstInterfaceName}".`;
-                                return;
-                            }
-                            device = await connect(new dfu.Device(selectedDevice, interfaces[0]));
-                        }
-                    }
-                ).catch(error => {
+                navigator.usb.requestDevice({ 'filters': filters }).then(connectToDevice).catch(error => {
                     statusDisplay.textContent = error;
                 });
             }
@@ -544,7 +540,11 @@ var device = null;
                         device = null;
                         if (detached) {
                             // Wait a few seconds and try reconnecting
-                            setTimeout(autoConnect, 5000);
+                            setTimeout(() => {
+                                autoConnectPairedDevice().catch(error => {
+                                    statusDisplay.textContent = error;
+                                });
+                            }, 5000);
                         }
                     },
                     async error => {
@@ -659,9 +659,9 @@ var device = null;
         if (typeof navigator.usb !== 'undefined') {
             navigator.usb.addEventListener("disconnect", onUnexpectedDisconnect);
             // Try connecting automatically
-            if (fromLandingPage) {
-                autoConnect(vid, serial);
-            }
+            autoConnectPairedDevice().catch(error => {
+                statusDisplay.textContent = error;
+            });
         } else {
             statusDisplay.textContent = 'WebUSB not available.'
             connectButton.disabled = true;
