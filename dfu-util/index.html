@@ -8,18 +8,52 @@
     <script src="FileSaver.js"></script>
     <script src="dfu-util.js"></script>
     <style>
+      :root {
+        color-scheme: dark;
+      }
+      html, body {
+        background: #0f1115;
+        color: #e6e6e6;
+      }
+      a {
+        color: #8ab4ff;
+      }
+      button,
+      input,
+      fieldset {
+        background: #171a21;
+        color: #e6e6e6;
+        border-color: #3a4150;
+      }
+      button:disabled,
+      input:disabled {
+        color: #8b93a7;
+        background: #12151b;
+      }
+      #status,
+      #usbInfo,
+      #dfuInfo,
+      .log {
+        color: #d7dce5;
+      }
+      .log {
+        background: #12151b;
+        border: 1px solid #2d3442;
+        padding: 0.75rem;
+        border-radius: 0.4rem;
+      }
       p.warning {
-        color: red;
+        color: #ffb86c;
       }
       p.error {
-        color: red;
+        color: #ff7b72;
         font-weight: bold;
       }
       label.radio {
         display: inline;
       }
       input:invalid {
-        color:red;
+        color: #ff7b72;
       }
     </style>
   </head>
