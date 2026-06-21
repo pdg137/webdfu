@@ -2,6 +2,8 @@ var device = null;
 (function() {
     'use strict';
 
+  const expectedDfuInterfaceName = "@Internal Flash    /0x08000000/64*02Kg";
+
     function hex4(n) {
         let s = n.toString(16)
         while (s.length < 4) {
@@ -511,21 +513,12 @@ var device = null;
                             device = await connect(new dfu.Device(selectedDevice, interfaces[0]));
                         } else {
                             await fixInterfaceNames(selectedDevice, interfaces);
-                            populateInterfaceList(interfaceForm, selectedDevice, interfaces);
-                            async function connectToSelectedInterface() {
-                                interfaceForm.removeEventListener('submit', this);
-                                const index = interfaceForm.elements["interfaceIndex"].value;
-                                device = await connect(new dfu.Device(selectedDevice, interfaces[index]));
+                            const firstInterfaceName = String(interfaces[0].name);
+                            if (firstInterfaceName != expectedDfuInterfaceName) {
+                                statusDisplay.textContent = `Expected first DFU interface name "${expectedDfuInterfaceName}", got "${firstInterfaceName}".`;
+                                return;
                             }
-
-                            interfaceForm.addEventListener('submit', connectToSelectedInterface);
-
-                            interfaceDialog.addEventListener('cancel', function () {
-                                interfaceDialog.removeEventListener('cancel', this);
-                                interfaceForm.removeEventListener('submit', connectToSelectedInterface);
-                            });
-
-                            interfaceDialog.showModal();
+                            device = await connect(new dfu.Device(selectedDevice, interfaces[0]));
                         }
                     }
                 ).catch(error => {
