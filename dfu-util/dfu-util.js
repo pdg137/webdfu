@@ -93,34 +93,6 @@ var device = null;
         }
     }
 
-    function populateInterfaceList(form, device_, interfaces) {
-        let old_choices = Array.from(form.getElementsByTagName("div"));
-        for (let radio_div of old_choices) {
-            form.removeChild(radio_div);
-        }
-
-        let button = form.getElementsByTagName("button")[0];
-
-        for (let i=0; i < interfaces.length; i++) {
-            let radio = document.createElement("input");
-            radio.type = "radio";
-            radio.name = "interfaceIndex";
-            radio.value = i;
-            radio.id = "interface" + i;
-            radio.required = true;
-
-            let label = document.createElement("label");
-            label.textContent = formatDFUInterfaceAlternate(interfaces[i]);
-            label.className = "radio"
-            label.setAttribute("for", "interface" + i);
-
-            let div = document.createElement("div");
-            div.appendChild(radio);
-            div.appendChild(label);
-            form.insertBefore(div, button);
-        }
-    }
-
     function getDFUDescriptorProperties(device) {
         // Attempt to read the DFU functional descriptor
         // TODO: read the selected configuration's descriptor
@@ -222,21 +194,14 @@ var device = null;
 
     document.addEventListener('DOMContentLoaded', event => {
         let connectButton = document.querySelector("#connect");
-        let detachButton = document.querySelector("#detach");
         let downloadButton = document.querySelector("#download");
         let uploadButton = document.querySelector("#upload");
         let statusDisplay = document.querySelector("#status");
         let infoDisplay = document.querySelector("#usbInfo");
         let dfuDisplay = document.querySelector("#dfuInfo");
-        let vidField = document.querySelector("#vid");
-        let interfaceDialog = document.querySelector("#interfaceDialog");
-        let interfaceForm = document.querySelector("#interfaceForm");
-        let interfaceSelectButton = document.querySelector("#selectInterface");
 
         let searchParams = new URLSearchParams(window.location.search);
-        let fromLandingPage = false;
         let vid = stVendorId;
-        vidField.value = "0x" + hex4(vid).toUpperCase();
         // Set the vendor ID from the landing page URL
         if (searchParams.has("vid")) {
             const vidString = searchParams.get("vid");
@@ -246,8 +211,6 @@ var device = null;
                 } else {
                     vid = parseInt(vidString, 10);
                 }
-                vidField.value = "0x" + hex4(vid).toUpperCase();
-                fromLandingPage = true;
             } catch (error) {
                 console.log("Bad VID " + vidString + ":" + error);
             }
@@ -261,16 +224,11 @@ var device = null;
             if (window.location.search.endsWith("/") && serial.endsWith("/")) {
                 serial = serial.substring(0, serial.length-1);
             }
-            fromLandingPage = true;
         }
 
         let configForm = document.querySelector("#configForm");
 
-        let transferSizeField = document.querySelector("#transferSize");
-        let transferSize = parseInt(transferSizeField.value);
-
-        let dfuseStartAddressField = document.querySelector("#dfuseStartAddress");
-        let dfuseUploadSizeField = document.querySelector("#dfuseUploadSize");
+        let transferSize = 1024;
 
         let firmwareFileField = document.querySelector("#firmwareFile");
         let firmwareFile = null;
@@ -290,7 +248,6 @@ var device = null;
             connectButton.textContent = "Connect";
             infoDisplay.textContent = "";
             dfuDisplay.textContent = "";
-            detachButton.disabled = true;
             uploadButton.disabled = true;
             downloadButton.disabled = true;
             firmwareFileField.disabled = true;
@@ -328,7 +285,6 @@ var device = null;
                 device.properties = desc;
                 let info = `WillDetach=${desc.WillDetach}, ManifestationTolerant=${desc.ManifestationTolerant}, CanUpload=${desc.CanUpload}, CanDnload=${desc.CanDnload}, TransferSize=${desc.TransferSize}, DetachTimeOut=${desc.DetachTimeOut}, Version=${hex4(desc.DFUVersion)}`;
                 dfuDisplay.textContent += "\n" + info;
-                transferSizeField.value = desc.TransferSize;
                 transferSize = desc.TransferSize;
                 if (desc.CanDnload) {
                     manifestationTolerant = desc.ManifestationTolerant;
@@ -337,10 +293,9 @@ var device = null;
                 if (device.settings.alternate.interfaceProtocol == 0x02) {
                     if (!desc.CanUpload) {
                         uploadButton.disabled = true;
-                        dfuseUploadSizeField.disabled = true;
                     }
                     if (!desc.CanDnload) {
-                        dnloadButton.disabled = true;
+                        downloadButton.disabled = true;
                     }
                 }
 
@@ -399,37 +354,20 @@ var device = null;
 
             // Update buttons based on capabilities
             if (device.settings.alternate.interfaceProtocol == 0x01) {
-                // Runtime
-                detachButton.disabled = false;
                 uploadButton.disabled = true;
                 downloadButton.disabled = true;
                 firmwareFileField.disabled = true;
             } else {
-                // DFU
-                detachButton.disabled = true;
                 uploadButton.disabled = false;
                 downloadButton.disabled = false;
                 firmwareFileField.disabled = false;
             }
 
             if (device.memoryInfo) {
-                let dfuseFieldsDiv = document.querySelector("#dfuseFields")
-                dfuseFieldsDiv.hidden = false;
-                dfuseStartAddressField.disabled = false;
-                dfuseUploadSizeField.disabled = false;
                 let segment = device.getFirstWritableSegment();
                 if (segment) {
                     device.startAddress = segment.start;
-                    dfuseStartAddressField.value = "0x" + segment.start.toString(16);
-                    const maxReadSize = device.getMaxReadSize(segment.start);
-                    dfuseUploadSizeField.value = maxReadSize;
-                    dfuseUploadSizeField.max = maxReadSize;
                 }
-            } else {
-                let dfuseFieldsDiv = document.querySelector("#dfuseFields")
-                dfuseFieldsDiv.hidden = true;
-                dfuseStartAddressField.disabled = true;
-                dfuseUploadSizeField.disabled = true;
             }
 
             return device;
@@ -480,32 +418,6 @@ var device = null;
             return false;
         }
 
-        vidField.addEventListener("change", function() {
-            vid = parseInt(vidField.value, 16);
-        });
-
-        transferSizeField.addEventListener("change", function() {
-            transferSize = parseInt(transferSizeField.value);
-        });
-
-        dfuseStartAddressField.addEventListener("change", function(event) {
-            const field = event.target;
-            let address = parseInt(field.value, 16);
-            if (isNaN(address)) {
-                field.setCustomValidity("Invalid hexadecimal start address");
-            } else if (device && device.memoryInfo) {
-                if (device.getSegment(address) !== null) {
-                    device.startAddress = address;
-                    field.setCustomValidity("");
-                    dfuseUploadSizeField.max = device.getMaxReadSize(address);
-                } else {
-                    field.setCustomValidity("Address outside of memory map");
-                }
-            } else {
-                field.setCustomValidity("");
-            }
-        });
-
         connectButton.addEventListener('click', async function() {
             if (device) {
                 device.close().then(onDisconnect);
@@ -520,39 +432,6 @@ var device = null;
                 navigator.usb.requestDevice({ 'filters': filters }).then(connectToDevice).catch(error => {
                     statusDisplay.textContent = error;
                 });
-            }
-        });
-
-        detachButton.addEventListener('click', function() {
-            if (device) {
-                device.detach().then(
-                    async len => {
-                        let detached = false;
-                        try {
-                            await device.close();
-                            await device.waitDisconnected(5000);
-                            detached = true;
-                        } catch (err) {
-                            console.log("Detach failed: " + err);
-                        }
-
-                        onDisconnect();
-                        device = null;
-                        if (detached) {
-                            // Wait a few seconds and try reconnecting
-                            setTimeout(() => {
-                                autoConnectPairedDevice().catch(error => {
-                                    statusDisplay.textContent = error;
-                                });
-                            }, 5000);
-                        }
-                    },
-                    async error => {
-                        await device.close();
-                        onDisconnect(error);
-                        device = null;
-                    }
-                );
             }
         });
 
@@ -580,8 +459,8 @@ var device = null;
                 }
 
                 let maxSize = Infinity;
-                if (!dfuseUploadSizeField.disabled) {
-                    maxSize = parseInt(dfuseUploadSizeField.value);
+                if (device.memoryInfo && device.startAddress !== undefined) {
+                    maxSize = device.getMaxReadSize(device.startAddress);
                 }
 
                 try {
