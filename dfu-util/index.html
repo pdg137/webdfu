@@ -74,7 +74,11 @@
         <fieldset>
           <legend>Firmware Download (write to USB device)</legend>
           <p>
-            <input type="file" id="firmwareFile" name="file" disabled="true"/>
+            <input type="file" id="firmwareFile" name="file" accept=".bin,application/octet-stream" disabled="true"/>
+          </p>
+          <p>
+            Select a raw binary firmware image (.bin) linked for flash address 0x08000000.
+            The file bytes are written as-is; Intel HEX, ELF, UF2, and DFU container files are not parsed.
           </p>
           <p>
             <button id="download" disabled="true">Download</button>
@@ -97,7 +101,7 @@
     <ul>
       <li>A recent Chromium-based browser with WebUSB support.</li>
       <li>An STM32C071 connected in DFU bootloader mode over USB.</li>
-      <li>A firmware image ready to upload.</li>
+      <li>A raw .bin firmware image ready to write to flash.</li>
     </ul>
   </body>
 </html>

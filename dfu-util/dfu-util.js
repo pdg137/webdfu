@@ -2,7 +2,7 @@ var device = null;
 (function() {
     'use strict';
 
-  const expectedDfuInterfaceName = "@Internal Flash    /0x08000000/64*02Kg";
+    const internalFlashBaseAddress = 0x08000000;
     const stVendorId = 0x0483;
 
     function hex4(n) {
@@ -70,6 +70,52 @@ var device = null;
         const name = (settings.name) ? settings.name : "UNKNOWN";
 
         return `${mode}: cfg=${cfg}, intf=${intf}, alt=${alt}, name="${name}"`;
+    }
+
+    function getDfuSeMemoryInfo(settings) {
+        if (settings.alternate.interfaceProtocol != 0x02 || !settings.name) {
+            return null;
+        }
+
+        try {
+            return dfuse.parseMemoryDescriptor(settings.name);
+        } catch (error) {
+            console.log(`Failed to parse DfuSe memory descriptor "${settings.name}": ${error}`);
+            return null;
+        }
+    }
+
+    function isInternalFlashInterface(settings) {
+        const memoryInfo = getDfuSeMemoryInfo(settings);
+        if (!memoryInfo || !memoryInfo.segments) {
+            return false;
+        }
+
+        return memoryInfo.segments.some(segment =>
+            segment.writable &&
+            segment.start <= internalFlashBaseAddress &&
+            internalFlashBaseAddress < segment.end
+        );
+    }
+
+    function selectDfuInterface(interfaces) {
+        if (interfaces.length == 1) {
+            return interfaces[0];
+        }
+
+        let candidates = [];
+        for (let settings of interfaces) {
+            if (isInternalFlashInterface(settings)) {
+                candidates.push(settings);
+            }
+        }
+
+        if (candidates.length == 0) {
+            throw `No writable internal flash DFU interface found at ${hexAddr8(internalFlashBaseAddress)}. Available interfaces:\n` +
+                  interfaces.map(formatDFUInterfaceAlternate).join("\n");
+        }
+
+        return candidates[0];
     }
 
     async function fixInterfaceNames(device_, interfaces) {
@@ -378,17 +424,14 @@ var device = null;
             if (interfaces.length == 0) {
                 console.log(selectedDevice);
                 statusDisplay.textContent = "The selected device does not have any USB DFU interfaces.";
-            } else if (interfaces.length == 1) {
-                await fixInterfaceNames(selectedDevice, interfaces);
-                device = await connect(new dfu.Device(selectedDevice, interfaces[0]));
             } else {
                 await fixInterfaceNames(selectedDevice, interfaces);
-                const firstInterfaceName = String(interfaces[0].name).trim();
-                if (firstInterfaceName != expectedDfuInterfaceName) {
-                    statusDisplay.textContent = `Expected first DFU interface name "${expectedDfuInterfaceName}", got "${firstInterfaceName}".`;
-                    return;
+                try {
+                    const selectedInterface = selectDfuInterface(interfaces);
+                    device = await connect(new dfu.Device(selectedDevice, selectedInterface));
+                } catch (error) {
+                    statusDisplay.textContent = error;
                 }
-                device = await connect(new dfu.Device(selectedDevice, interfaces[0]));
             }
         };
 
