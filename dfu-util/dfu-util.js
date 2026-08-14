@@ -296,7 +296,6 @@ var device = null;
             dfuDisplay.textContent = "";
             uploadButton.disabled = true;
             downloadButton.disabled = true;
-            firmwareFileField.disabled = true;
         }
 
         function onUnexpectedDisconnect(event) {
@@ -402,11 +401,9 @@ var device = null;
             if (device.settings.alternate.interfaceProtocol == 0x01) {
                 uploadButton.disabled = true;
                 downloadButton.disabled = true;
-                firmwareFileField.disabled = true;
             } else {
                 uploadButton.disabled = false;
                 downloadButton.disabled = false;
-                firmwareFileField.disabled = false;
             }
 
             if (device.memoryInfo) {
