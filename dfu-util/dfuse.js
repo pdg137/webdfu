@@ -218,11 +218,6 @@ var dfuse = {};
             throw "No memory map available";
         }
 
-        this.logInfo("Erasing DFU device memory");
-        
-        let bytes_sent = 0;
-        let expected_size = data.byteLength;
-
         let startAddress = this.startAddress;
         if (isNaN(startAddress)) {
             startAddress = this.memoryInfo.segments[0].start;
@@ -230,6 +225,12 @@ var dfuse = {};
         } else if (this.getSegment(startAddress) === null) {
             this.logError(`Start address 0x${startAddress.toString(16)} outside of memory map bounds`);
         }
+
+        this.logInfo("Erasing DFU device memory");
+
+        let bytes_sent = 0;
+        let expected_size = data.byteLength;
+
         await this.erase(startAddress, expected_size);
 
         this.logInfo("Copying data from browser to DFU device");
@@ -249,7 +250,7 @@ var dfuse = {};
                 dfu_status = await this.poll_until_idle(dfu.dfuDNLOAD_IDLE);
                 address += chunk_size;
             } catch (error) {
-                throw "Error during DfuSe download: " + error;
+                throw `Error during DfuSe download at 0x${address.toString(16)} (${chunk_size} bytes): ${error}`;
             }
 
             if (dfu_status.status != dfu.STATUS_OK) {
@@ -274,7 +275,12 @@ var dfuse = {};
         try {
             await this.poll_until(state => (state == dfu.dfuMANIFEST));
         } catch (error) {
-            this.logError(error);
+            if (!this.disconnected &&
+                !error.endsWith("ControlTransferIn failed: NetworkError: Failed to execute 'controlTransferIn' on 'USBDevice': A transfer error has occurred.") &&
+                !error.endsWith("ControlTransferIn failed: NotFoundError: Device unavailable.") &&
+                !error.endsWith("ControlTransferIn failed: NotFoundError: The device was disconnected.")) {
+                throw "Error during DfuSe manifestation: " + error;
+            }
         }
     }
 
